@@ -1,3 +1,5 @@
+/** @odoo-module **/
+
 /**
  * Odoo 17 Offline ORM service.
  *
