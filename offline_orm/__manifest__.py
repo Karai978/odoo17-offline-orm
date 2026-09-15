@@ -12,6 +12,8 @@
             "offline_orm/static/src/offline_database.js",
             "offline_orm/static/src/offline_query_engine.js",
             "offline_orm/static/src/register_service.js",
+            "offline_orm/static/src/offline_bootstrap.js",
+            "offline_orm/static/src/register_bootstrap.js",
         ],
     },
     "installable": True,
