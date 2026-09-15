@@ -57,12 +57,21 @@ class OfflineORM {
     async call(model, method, args = [], kwargs = {}) {
         validateModel(model);
 
-        // Native Odoo 17 views are loaded through orm.call("get_views") in
-        // View.loadView(). The bootstrap already stores the complete get_views
-        // response in the local metadata store, so dispatch this native ORM
-        // contract to the same offline implementation as orm.getViews().
+        // Odoo 17's native view service calls:
+        // orm.call(resModel, "get_views", [], { context, views, options }).
+        // The Python signature is get_views(views, options=None), therefore
+        // `views` and `options` must stay in kwargs; putting views in args as
+        // well produces "got multiple values for argument 'views'".
         if (method === "get_views") {
-            return this.getViews(model, args[0] || [], kwargs);
+            return this.router.execute({
+                online: () => this.rpc(`/web/dataset/call_kw/${model}/get_views`, {
+                    model,
+                    method,
+                    args: [],
+                    kwargs: rpcKwargs(kwargs, this._context),
+                }, { silent: false }),
+                offline: async () => (await this.database.getMetadata("views", model)) || {},
+            });
         }
 
         return this.router.execute({
