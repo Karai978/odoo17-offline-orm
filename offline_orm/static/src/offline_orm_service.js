@@ -56,6 +56,15 @@ class OfflineORM {
 
     async call(model, method, args = [], kwargs = {}) {
         validateModel(model);
+
+        // Native Odoo 17 views are loaded through orm.call("get_views") in
+        // View.loadView(). The bootstrap already stores the complete get_views
+        // response in the local metadata store, so dispatch this native ORM
+        // contract to the same offline implementation as orm.getViews().
+        if (method === "get_views") {
+            return this.getViews(model, args[0] || [], kwargs);
+        }
+
         return this.router.execute({
             online: () => this.rpc(`/web/dataset/call_kw/${model}/${method}`, {
                 model,
