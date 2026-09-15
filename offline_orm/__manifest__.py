@@ -7,6 +7,7 @@
     "depends": ["web"],
     "assets": {
         "web.assets_backend": [
+            "offline_orm/static/src/offline_rpc_service.js",
             "offline_orm/static/src/offline_orm_service.js",
             "offline_orm/static/src/connection_router.js",
             "offline_orm/static/src/offline_database.js",
@@ -16,6 +17,7 @@
             "offline_orm/static/src/register_bootstrap.js",
             "offline_orm/static/src/offline_app_download.js",
             "offline_orm/static/src/register_app_download.js",
+            "offline_orm/static/src/offline_menu_service.js",
             "offline_orm/static/src/offline_download_systray.js",
             "offline_orm/static/src/offline_download_systray.xml",
         ],
