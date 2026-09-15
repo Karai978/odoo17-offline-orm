@@ -57,18 +57,24 @@ class OfflineORM {
     async call(model, method, args = [], kwargs = {}) {
         validateModel(model);
 
-        // Odoo 17's native view service calls:
+        // Native Odoo 17 view_service calls:
         // orm.call(resModel, "get_views", [], { context, views, options }).
-        // The Python signature is get_views(views, options=None), therefore
-        // `views` and `options` must stay in kwargs; putting views in args as
-        // well produces "got multiple values for argument 'views'".
+        // Python defines get_views(views, options=None), so normalize the
+        // native RPC contract to one positional `views` argument and one
+        // keyword `options` argument. This avoids passing `views` twice and
+        // keeps the server contract identical to a native ORM call.
         if (method === "get_views") {
+            const requestedViews = kwargs.views ?? args[0] ?? [];
+            const options = { ...(kwargs.options || {}) };
             return this.router.execute({
                 online: () => this.rpc(`/web/dataset/call_kw/${model}/get_views`, {
                     model,
                     method,
-                    args: [],
-                    kwargs: rpcKwargs(kwargs, this._context),
+                    args: [requestedViews],
+                    kwargs: {
+                        context: mergeContext(this._context, kwargs.context),
+                        options,
+                    },
                 }, { silent: false }),
                 offline: async () => (await this.database.getMetadata("views", model)) || {},
             });
@@ -325,7 +331,10 @@ class OfflineORM {
                 model,
                 method: "get_views",
                 args: [views],
-                kwargs: { ...options, context: mergeContext(this._context, options.context) },
+                kwargs: {
+                    context: mergeContext(this._context, options.context),
+                    options: options.options || {},
+                },
             }, { silent: false }),
             offline: async () => (await this.database.getMetadata("views", model)) || {},
         });
