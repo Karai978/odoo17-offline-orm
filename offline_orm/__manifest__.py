@@ -16,6 +16,8 @@
             "offline_orm/static/src/register_bootstrap.js",
             "offline_orm/static/src/offline_app_download.js",
             "offline_orm/static/src/register_app_download.js",
+            "offline_orm/static/src/offline_download_systray.js",
+            "offline_orm/static/src/offline_download_systray.xml",
         ],
     },
     "installable": True,
