@@ -10,6 +10,7 @@
  */
 
 import { rpcService as nativeRpcService } from "@web/core/network/rpc_service";
+import { registry } from "@web/core/registry";
 import { OfflineDatabase } from "./offline_database";
 
 function isConnectionLoss(error) {
@@ -74,9 +75,6 @@ export const offlineRpcService = {
         const database = new OfflineDatabase();
 
         return async function rpc(route, params = {}, settings = {}) {
-            // These are native WebClient probes, not business operations. They
-            // must not turn an already-loaded client into an error state when
-            // the connection disappears.
             if (isOffline()) {
                 if (route === "/web/session/check") {
                     return null;
@@ -110,17 +108,18 @@ export const offlineRpcService = {
                     const action = await getCachedAction(database, actionIdFromRequest(params));
                     if (action) return action;
                 }
-
                 if (route === "/web/session/check") {
                     return null;
                 }
-
                 if (route === "/web/webclient/version_info") {
                     return getCachedVersionInfo(database);
                 }
-
                 throw error;
             }
         };
     },
 };
+
+// This is the critical registration: native Odoo services such as action_service
+// call env.services.rpc directly, so replacing only the ORM service is not enough.
+registry.category("services").add("rpc", offlineRpcService, { force: true });
