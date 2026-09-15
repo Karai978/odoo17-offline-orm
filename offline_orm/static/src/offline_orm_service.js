@@ -191,9 +191,6 @@ class OfflineORM {
         });
     }
 
-    /**
-     * Odoo 17 calls this as webRead(model, ids, {specification, context}).
-     */
     async webRead(model, ids, options = {}) {
         validateModel(model);
         const normalizedIds = normalizeIds(ids);
@@ -209,9 +206,6 @@ class OfflineORM {
         });
     }
 
-    /**
-     * Odoo 17 calls this as webSearchRead(model, domain, {specification, ...}).
-     */
     async webSearchRead(model, domain = [], options = {}) {
         validateModel(model);
         const specification = options.specification || {};
@@ -310,8 +304,8 @@ class OfflineORM {
             online: () => this.rpc(`/web/dataset/call_kw/${model}/get_views`, {
                 model,
                 method: "get_views",
-                args: [],
-                kwargs: { ...options, views, context: mergeContext(this._context, options.context) },
+                args: [views],
+                kwargs: { ...options, context: mergeContext(this._context, options.context) },
             }, { silent: false }),
             offline: async () => (await this.database.getMetadata("views", model)) || {},
         });
