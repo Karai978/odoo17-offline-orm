@@ -1,3 +1,5 @@
+/** @odoo-module **/
+
 /**
  * Generic local ORM query engine for Odoo 17.
  *

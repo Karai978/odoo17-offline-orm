@@ -1,3 +1,5 @@
+/** @odoo-module **/
+
 /**
  * Generic Odoo 17 App Download Engine.
  *

@@ -1,3 +1,5 @@
+/** @odoo-module **/
+
 /**
  * Connection Router
  *

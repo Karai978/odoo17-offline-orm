@@ -1,3 +1,5 @@
+/** @odoo-module **/
+
 /**
  * Canonical IndexedDB storage for the Odoo 17 Offline ORM.
  *

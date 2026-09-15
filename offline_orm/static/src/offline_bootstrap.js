@@ -1,3 +1,5 @@
+/** @odoo-module **/
+
 /**
  * Connected Odoo 17 -> metadata/security/business snapshot -> IndexedDB.
  * Native WebClient/services remain the consumers; this file only downloads.
