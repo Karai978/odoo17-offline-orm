@@ -159,7 +159,20 @@ export class OfflineBootstrap {
         const fields = await this.orm.fieldsGet(model);
         await this.database.putMetadata("fields", model, fields);
 
-        const result = { model, fields_count: Object.keys(fields).length, records: 0, access: null, views: null, relations: [] };
+        const modelRows = await this.orm.searchRead("ir.model", [["model", "=", model]],
+            ["id", "name", "model", "state", "transient"], { limit: 1 });
+        const modelInfo = modelRows[0] || { model, name: model, state: null, transient: false };
+        await this.database.putMetadata("models", model, modelInfo);
+
+        const result = {
+            model,
+            model_info: modelInfo,
+            fields_count: Object.keys(fields).length,
+            records: 0,
+            access: null,
+            views: null,
+            relations: [],
+        };
 
         if (cfg.includeAccessRights) {
             result.access = await this._access(model);
