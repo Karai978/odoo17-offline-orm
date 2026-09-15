@@ -20,6 +20,10 @@ function isConnectionLoss(error) {
     );
 }
 
+function isOffline() {
+    return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
 function actionIdFromRequest(params = {}) {
     const value = params.action_id;
     if (typeof value === "number" && Number.isInteger(value)) return value;
@@ -56,6 +60,13 @@ async function getCachedAction(database, actionId) {
     return normalizeAction(action);
 }
 
+async function getCachedVersionInfo(database) {
+    return (await database.getMetadata("webclient", "version_info")) || {
+        server_version: "17.0",
+        server_version_info: [17, 0, 0, "final", 0, ""],
+    };
+}
+
 export const offlineRpcService = {
     async: true,
     start(env) {
@@ -63,15 +74,33 @@ export const offlineRpcService = {
         const database = new OfflineDatabase();
 
         return async function rpc(route, params = {}, settings = {}) {
+            // These are native WebClient probes, not business operations. They
+            // must not turn an already-loaded client into an error state when
+            // the connection disappears.
+            if (isOffline()) {
+                if (route === "/web/session/check") {
+                    return null;
+                }
+                if (route === "/web/webclient/version_info") {
+                    return getCachedVersionInfo(database);
+                }
+                if (route === "/web/action/load") {
+                    const action = await getCachedAction(database, actionIdFromRequest(params));
+                    if (action) return action;
+                }
+            }
+
             try {
                 const result = await nativeRpc(route, params, settings);
 
-                // Keep the exact server action response for later offline use.
                 if (route === "/web/action/load") {
                     const actionId = actionIdFromRequest(params);
                     if (Number.isInteger(actionId)) {
                         await database.putMetadata("action_load", String(actionId), result);
                     }
+                }
+                if (route === "/web/webclient/version_info" && result) {
+                    await database.putMetadata("webclient", "version_info", result);
                 }
                 return result;
             } catch (error) {
@@ -82,11 +111,12 @@ export const offlineRpcService = {
                     if (action) return action;
                 }
 
-                // /web/session/check is only a validity probe. While offline,
-                // keeping the existing authenticated session alive locally is
-                // preferable to crashing the native WebClient.
                 if (route === "/web/session/check") {
                     return null;
+                }
+
+                if (route === "/web/webclient/version_info") {
+                    return getCachedVersionInfo(database);
                 }
 
                 throw error;
