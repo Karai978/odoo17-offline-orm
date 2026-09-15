@@ -1,8 +1,8 @@
 /**
  * Odoo 17 Offline ORM service.
  *
- * This is a native ORM-compatible facade. It keeps the WebClient contract and
- * routes each operation to native RPC or the local IndexedDB engine.
+ * Native ORM-compatible facade. The native WebClient remains the consumer;
+ * this service only changes where the ORM operation is executed.
  */
 
 import { ConnectionRouter } from "./connection_router";
@@ -21,22 +21,8 @@ function normalizeIds(ids) {
     return Array.isArray(ids) ? ids : [ids];
 }
 
-function fieldsFromSpecification(specification) {
-    if (!specification) return [];
-    if (Array.isArray(specification)) return specification;
-    if (typeof specification === "object") {
-        return Object.entries(specification)
-            .filter(([, value]) => value !== false && value !== null)
-            .map(([field]) => field);
-    }
-    return [];
-}
-
-function rpcOptions(options = {}, context) {
-    return {
-        ...options,
-        context: mergeContext(context, options.context),
-    };
+function rpcKwargs(options = {}, context) {
+    return { ...options, context: mergeContext(context, options.context) };
 }
 
 class OfflineORM {
@@ -73,11 +59,9 @@ class OfflineORM {
                 model,
                 method,
                 args,
-                kwargs: rpcOptions(kwargs, this._context),
+                kwargs: rpcKwargs(kwargs, this._context),
             }, { silent: false }),
-            offline: () => {
-                throw this._unsupported("call", `${model}.${method}`);
-            },
+            offline: () => { throw this._unsupported("call", `${model}.${method}`); },
         });
     }
 
@@ -87,13 +71,10 @@ class OfflineORM {
             online: () => this.rpc(`/web/dataset/call_kw/${model}/create`, {
                 model,
                 method: "create",
-                args: [values],
-                kwargs: rpcOptions(options, this._context),
+                args: [Array.isArray(values) ? values : [values]],
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
-            offline: async () => {
-                const record = await this._createLocal(model, values);
-                return record.local_id;
-            },
+            offline: async () => (await this._createLocal(model, values)).local_id,
         });
     }
 
@@ -105,7 +86,7 @@ class OfflineORM {
                 model,
                 method: "read",
                 args: [normalizedIds, fields],
-                kwargs: rpcOptions(options, this._context),
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
             offline: () => this.queryEngine.read(model, normalizedIds, fields, options),
         });
@@ -119,7 +100,7 @@ class OfflineORM {
                 model,
                 method: "write",
                 args: [normalizedIds, values],
-                kwargs: rpcOptions(options, this._context),
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
             offline: async () => {
                 for (const id of normalizedIds) await this._writeLocal(model, id, values);
@@ -136,7 +117,7 @@ class OfflineORM {
                 model,
                 method: "unlink",
                 args: [normalizedIds],
-                kwargs: rpcOptions(options, this._context),
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
             offline: async () => {
                 for (const id of normalizedIds) await this._unlinkLocal(model, id);
@@ -152,7 +133,7 @@ class OfflineORM {
                 model,
                 method: "search",
                 args: [domain],
-                kwargs: rpcOptions(options, this._context),
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
             offline: () => this.queryEngine.search(model, domain, options),
         });
@@ -165,7 +146,7 @@ class OfflineORM {
                 model,
                 method: "search_read",
                 args: [domain, fields],
-                kwargs: rpcOptions(options, this._context),
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
             offline: () => this.queryEngine.searchRead(model, domain, fields, options),
         });
@@ -178,122 +159,146 @@ class OfflineORM {
                 model,
                 method: "search_count",
                 args: [domain],
-                kwargs: rpcOptions(options, this._context),
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
             offline: () => this.queryEngine.searchCount(model, domain, options),
         });
     }
 
-    async readGroup(model, domain, fields, groupby, options = {}) {
+    async readGroup(model, domain = [], fields = [], groupby = [], options = {}) {
         validateModel(model);
         return this.router.execute({
             online: () => this.rpc(`/web/dataset/call_kw/${model}/read_group`, {
                 model,
                 method: "read_group",
                 args: [domain, fields, groupby],
-                kwargs: rpcOptions(options, this._context),
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
-            offline: () => { throw this._unsupported("readGroup"); },
+            offline: () => this.queryEngine.readGroup(model, domain, fields, groupby, options),
         });
     }
 
-    async webReadGroup(model, domain, fields, groupby, options = {}) {
+    async webReadGroup(model, domain = [], fields = [], groupby = [], options = {}) {
         validateModel(model);
         return this.router.execute({
             online: () => this.rpc(`/web/dataset/call_kw/${model}/web_read_group`, {
                 model,
                 method: "web_read_group",
                 args: [domain, fields, groupby],
-                kwargs: rpcOptions(options, this._context),
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
-            offline: () => { throw this._unsupported("webReadGroup"); },
+            offline: () => this.queryEngine.webReadGroup(model, domain, fields, groupby, options),
         });
     }
 
-    async webRead(model, ids, specification, context = {}) {
+    /**
+     * Odoo 17 calls this as webRead(model, ids, {specification, context}).
+     */
+    async webRead(model, ids, options = {}) {
         validateModel(model);
         const normalizedIds = normalizeIds(ids);
+        const specification = options.specification || {};
         return this.router.execute({
             online: () => this.rpc(`/web/dataset/call_kw/${model}/web_read`, {
                 model,
                 method: "web_read",
                 args: [normalizedIds, specification],
-                kwargs: { context: mergeContext(this._context, context) },
+                kwargs: { context: mergeContext(this._context, options.context) },
             }, { silent: false }),
-            offline: () => this.queryEngine.read(model, normalizedIds, fieldsFromSpecification(specification), { context: mergeContext(this._context, context) }),
+            offline: () => this.queryEngine.webRead(model, normalizedIds, specification, options),
         });
     }
 
-    async webSearchRead(model, domain, specification, context = {}) {
+    /**
+     * Odoo 17 calls this as webSearchRead(model, domain, {specification, ...}).
+     */
+    async webSearchRead(model, domain = [], options = {}) {
         validateModel(model);
+        const specification = options.specification || {};
         return this.router.execute({
             online: () => this.rpc(`/web/dataset/call_kw/${model}/web_search_read`, {
                 model,
                 method: "web_search_read",
-                args: [],
-                kwargs: { domain, specification, context: mergeContext(this._context, context) },
+                args: [domain, specification],
+                kwargs: {
+                    offset: options.offset,
+                    limit: options.limit,
+                    order: options.order,
+                    count_limit: options.count_limit,
+                    context: mergeContext(this._context, options.context),
+                },
             }, { silent: false }),
-            offline: async () => {
-                const fields = fieldsFromSpecification(specification);
-                const options = specification?.limit !== undefined ? { limit: specification.limit } : {};
-                return this.queryEngine.searchRead(model, domain || [], fields, options);
-            },
+            offline: () => this.queryEngine.webSearchRead(model, domain, specification, options),
         });
     }
 
-    async webSave(model, id, values, specification, context = {}) {
+    async webSave(model, id, values, specification, options = {}) {
         validateModel(model);
         return this.router.execute({
             online: () => this.rpc(`/web/dataset/call_kw/${model}/web_save`, {
                 model,
                 method: "web_save",
-                args: [[id], values],
-                kwargs: { specification, context: mergeContext(this._context, context) },
+                args: [values, specification, id ?? undefined],
+                kwargs: { context: mergeContext(this._context, options.context) },
             }, { silent: false }),
             offline: async () => {
-                const identity = id ?? (await this._createLocal(model, values)).local_id;
-                if (id !== undefined && id !== null) await this._writeLocal(model, id, values);
-                return this.webRead(model, [identity], specification, context);
+                let identity = id;
+                if (identity === undefined || identity === null) {
+                    identity = (await this._createLocal(model, values)).local_id;
+                } else {
+                    await this._writeLocal(model, identity, values);
+                }
+                return this.webRead(model, [identity], {
+                    specification,
+                    context: options.context,
+                });
             },
         });
     }
 
-    async nameGet(model, ids, context = {}) {
+    async nameGet(model, ids, options = {}) {
         validateModel(model);
+        const normalizedIds = normalizeIds(ids);
         return this.router.execute({
             online: () => this.rpc(`/web/dataset/call_kw/${model}/name_get`, {
-                model, method: "name_get", args: [normalizeIds(ids)], kwargs: { context: mergeContext(this._context, context) },
+                model,
+                method: "name_get",
+                args: [normalizedIds],
+                kwargs: rpcKwargs(options, this._context),
             }, { silent: false }),
             offline: async () => {
-                const records = await this.queryEngine.read(model, normalizeIds(ids), ["display_name", "name"]);
-                return records.map((record) => [record.id, record.display_name ?? record.name ?? String(record.id)]);
+                const records = await this.queryEngine.read(model, normalizedIds, ["display_name", "name", "complete_name"]);
+                return records.map((record) => [record.id, record.display_name ?? record.name ?? record.complete_name ?? String(record.id)]);
             },
         });
     }
 
-    async nameSearch(model, name = "", domain = [], operator = "ilike", limit = 100, context = {}) {
+    async nameSearch(model, name = "", domain = [], operator = "ilike", limit = 100, options = {}) {
         const searchDomain = name ? [...(domain || []), ["display_name", operator, name]] : (domain || []);
-        const ids = await this.search(model, searchDomain, { limit, context });
-        return this.nameGet(model, ids, context);
+        const ids = await this.search(model, searchDomain, { limit, context: options.context });
+        return this.nameGet(model, ids, options);
     }
 
-    async nameCreate(model, name, context = {}) {
-        return this.create(model, { name }, { context });
+    async nameCreate(model, name, options = {}) {
+        return this.create(model, { name }, options);
     }
 
-    async onchange(model, ids, values, fieldName, specification, context = {}) {
-        return this.call(model, "onchange", [normalizeIds(ids), values, fieldName, specification], { context });
+    async onchange(model, ids, values, fieldName, specification, options = {}) {
+        return this.call(model, "onchange", [normalizeIds(ids), values, fieldName, specification], options);
     }
 
-    async defaultGet(model, fields, context = {}) {
-        return this.call(model, "default_get", [fields], { context });
+    async defaultGet(model, fields, options = {}) {
+        return this.call(model, "default_get", [fields], options);
     }
 
-    async fieldsGet(model, attributes = [], context = {}) {
+    async fieldsGet(model, attributes = [], options = {}) {
         validateModel(model);
         return this.router.execute({
             online: () => this.rpc(`/web/dataset/call_kw/${model}/fields_get`, {
-                model, method: "fields_get", args: [attributes], kwargs: { context: mergeContext(this._context, context) },
+                model,
+                method: "fields_get",
+                args: [attributes],
+                kwargs: { context: mergeContext(this._context, options.context) },
             }, { silent: false }),
             offline: async () => (await this.database.getMetadata("fields", model)) || {},
         });
@@ -303,7 +308,10 @@ class OfflineORM {
         validateModel(model);
         return this.router.execute({
             online: () => this.rpc(`/web/dataset/call_kw/${model}/get_views`, {
-                model, method: "get_views", args: [], kwargs: { ...options, views, context: mergeContext(this._context, options.context) },
+                model,
+                method: "get_views",
+                args: [],
+                kwargs: { ...options, views, context: mergeContext(this._context, options.context) },
             }, { silent: false }),
             offline: async () => (await this.database.getMetadata("views", model)) || {},
         });
@@ -315,20 +323,22 @@ class OfflineORM {
     }
 
     async _createLocal(model, values) {
-        const localUUID = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+        const localUUID = typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()}`;
         const record = await this.database.putRecord({
             model,
             local_uuid: localUUID,
             local_id: this.database.allocateLocalId(),
             server_id: null,
-            values,
+            values: { ...(values || {}) },
             sync_state: RECORD_SYNC_STATE.PENDING_CREATE,
         });
         await this.database.enqueue({
             local_uuid: localUUID,
             model,
             operation: "create",
-            payload: { values },
+            payload: { values: { ...(values || {}) } },
         });
         return record;
     }
@@ -336,17 +346,18 @@ class OfflineORM {
     async _writeLocal(model, identity, values) {
         const record = await this.database.getRecord(model, identity);
         if (!record) throw new Error(`Offline record not found: ${model}/${identity}`);
-        record.values = { ...record.values, ...values };
+        record.values = { ...record.values, ...(values || {}) };
+        record.version = (record.version || 0) + 1;
         record.sync_state = record.sync_state === RECORD_SYNC_STATE.PENDING_CREATE
             ? RECORD_SYNC_STATE.PENDING_CREATE
             : RECORD_SYNC_STATE.PENDING_WRITE;
         record.updated_at = new Date().toISOString();
         await this.database.putRecord(record);
         await this.database.enqueue({
-            local_uuid: `${record.local_uuid}:write:${record.version + 1}`,
+            local_uuid: `${record.local_uuid}:write:${record.version}`,
             model,
             operation: "write",
-            payload: { id: record.server_id ?? record.local_id, values },
+            payload: { id: record.server_id ?? record.local_id, values: { ...(values || {}) } },
             reference_write_date: record.write_date,
         });
         return true;
@@ -361,7 +372,7 @@ class OfflineORM {
         await this.database.putRecord(record);
         if (record.server_id !== null && record.server_id !== undefined) {
             await this.database.enqueue({
-                local_uuid: `${record.local_uuid}:unlink`,
+                local_uuid: `${record.local_uuid}:unlink:${record.version || 1}`,
                 model,
                 operation: "unlink",
                 payload: { id: record.server_id },
@@ -371,8 +382,7 @@ class OfflineORM {
     }
 
     _unsupported(method, detail = "") {
-        const suffix = detail ? ` (${detail})` : "";
-        const error = new Error(`Unsupported offline ORM operation: ${method}${suffix}`);
+        const error = new Error(`Unsupported offline ORM operation: ${method}${detail ? ` (${detail})` : ""}`);
         error.code = "OFFLINE_UNSUPPORTED";
         error.method = method;
         return error;
