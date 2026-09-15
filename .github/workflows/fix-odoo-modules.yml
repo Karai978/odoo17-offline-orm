@@ -1,0 +1,56 @@
+name: Fix Odoo JS module headers
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add Odoo module headers
+        run: |
+          set -e
+          changed=0
+          for file in offline_orm/static/src/*.js; do
+            [ -f "$file" ] || continue
+            if ! grep -q '^/\*\* @odoo-module \*\*/' "$file"; then
+              tmp="${file}.tmp"
+              {
+                printf '/** @odoo-module **/\n\n'
+                cat "$file"
+              } > "$tmp"
+              mv "$tmp" "$file"
+              changed=1
+            fi
+          done
+          if [ "$changed" -eq 0 ]; then
+            echo "All Odoo JS files already have module headers."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add offline_orm/static/src/*.js
+          git commit -m "fix: mark all frontend files as Odoo modules"
+          git push
+
+      - name: Remove temporary workflow
+        if: success()
+        run: |
+          git pull --rebase origin main
+          if [ -f .github/workflows/fix-odoo-modules.yml ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git rm .github/workflows/fix-odoo-modules.yml
+            git commit -m "chore: remove temporary module header fixer"
+            git push
+          fi
