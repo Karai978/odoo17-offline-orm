@@ -97,8 +97,18 @@ export class OfflineBootstrap {
         let menus = [];
         let actions = [];
         if (cfg.includeMenus) {
-            menus = await this._menus(report);
-            if (cfg.includeActions) actions = await this._actions(menus, report);
+            try {
+                menus = await this._menus(report);
+            } catch (error) {
+                report.errors.push({ stage: "menus", message: error.message });
+            }
+            if (cfg.includeActions) {
+                try {
+                    actions = await this._actions(menus, report);
+                } catch (error) {
+                    report.errors.push({ stage: "actions", message: error.message });
+                }
+            }
         }
 
         const roots = unique(cfg.models?.length ? cfg.models : actions.map((a) => a.res_model));
@@ -159,9 +169,14 @@ export class OfflineBootstrap {
         const fields = await this.orm.fieldsGet(model);
         await this.database.putMetadata("fields", model, fields);
 
-        const modelRows = await this.orm.searchRead("ir.model", [["model", "=", model]],
-            ["id", "name", "model", "state", "transient"], { limit: 1 });
-        const modelInfo = modelRows[0] || { model, name: model, state: null, transient: false };
+        let modelInfo = { model, name: model, state: null, transient: false };
+        try {
+            const modelRows = await this.orm.searchRead("ir.model", [["model", "=", model]],
+                ["id", "name", "model", "state", "transient"], { limit: 1 });
+            if (modelRows[0]) modelInfo = modelRows[0];
+        } catch {
+            // ir.model visibility is not required to bootstrap the actual model.
+        }
         await this.database.putMetadata("models", model, modelInfo);
 
         const result = {
@@ -180,10 +195,14 @@ export class OfflineBootstrap {
         }
 
         if (cfg.includeViews) {
-            result.views = await this.orm.getViews(model, this._viewRequest(model, actions), {
-                context: this.user.context,
-            });
-            await this.database.putMetadata("views", model, result.views);
+            try {
+                result.views = await this.orm.getViews(model, this._viewRequest(model, actions), {
+                    context: this.user.context,
+                });
+                await this.database.putMetadata("views", model, result.views);
+            } catch {
+                result.views = null;
+            }
         }
 
         if (!cfg.includeBusinessData || result.access?.read === false) return result;
