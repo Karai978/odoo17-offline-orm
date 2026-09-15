@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="offline_orm.OfflineDownloadSystray">
+        <Dropdown class="o_offline_download_systray" position="bottom-end">
+            <t t-set-slot="toggler">
+                <button type="button" class="o-dropdown dropdown-toggle btn btn-link text-reset" title="Télécharger pour hors ligne" aria-label="Télécharger pour hors ligne">
+                    <i class="fa fa-cloud-download" aria-hidden="true"/>
+                </button>
+            </t>
+            <div class="px-3 py-2 fw-bold">Télécharger pour hors ligne</div>
+            <div t-if="!state.loaded" class="dropdown-item-text text-muted">
+                Chargement des applications…
+            </div>
+            <div t-elif="!state.apps.length" class="dropdown-item-text text-muted">
+                Aucune application disponible.
+            </div>
+            <t t-foreach="state.apps" t-as="app" t-key="app.technical_name">
+                <DropdownItem disabled="state.loading" onSelected="() => this.download(app)">
+                    <div class="d-flex align-items-center justify-content-between gap-3 w-100">
+                        <span t-esc="app.name"/>
+                        <span t-if="app.downloaded" class="text-success small">Hors ligne ✓</span>
+                        <span t-elif="state.downloading === app.technical_name" class="text-muted small">Téléchargement…</span>
+                    </div>
+                </DropdownItem>
+            </t>
+        </Dropdown>
+    </t>
+</templates>
